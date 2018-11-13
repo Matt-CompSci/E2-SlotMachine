@@ -1,0 +1,311 @@
+@name SlotMachine
+@inputs EGP:wirelink User:entity
+@persist [SlotTypes Slots]:table 
+@persist [StartScreenAmplitude Page MaxPrize Running Time]:number
+@persist [CurrentUser]:entity
+
+if(first())
+{
+    # Autowire to the EGP Screen that the E2's placed on
+    entity():createWire(entity():isWeldedTo(), "EGP", "wirelink")
+    entity():createWire(entity():isWeldedTo(), "User", "User")
+
+    # Data about each type of slot    
+    SlotTypes[1, table] = table("Icon" = "gui/gmod_logo", "Chance" = 1)
+    SlotTypes[2, table] = table("Icon" = "vgui/e2logo", "Chance" = 2)
+    SlotTypes[3, table] = table("Icon" = "vgui/notices/error", "Chance" = 3)
+    SlotTypes[4, table] = table("Icon" = "vgui/notices/generic", "Chance" = 4)
+    SlotTypes[5, table] = table("Icon" = "vgui/notices/hint", "Chance" = 5)
+    SlotTypes[6, table] = table("Icon" = "vgui/notices/undo", "Chance" = 6)
+    SlotTypes[7, table] = table("Icon" = "vgui/modicon", "Chance" = 7)
+    SlotTypes[8, table] = table("Icon" = "vgui/loading-rotate", "Chance" = 8)
+    
+    # Maximum prize that can be won on the machine
+    MaxPrize = 5000
+    
+    # Draw welcome screen and start animation
+    function void startScreen()
+    {
+        # Clear screen
+        EGP:egpClear()
+        
+        # Draw background 2x bigger than the screen so it can be rotated without being noticed
+        EGP:egpBox(1, vec2(256), vec2(1024))
+        EGP:egpColor(1, vec(0, 200, 64))
+        
+        # Variable used for keeping track of indexes when dynamically drawing
+        NObjs = 2
+        
+        # Amount of slot types
+        SlotTypeAmount = SlotTypes:count()
+        
+        # Draw the icon from each slot type onto the start screen in a circle shape
+        for(I = 1, SlotTypeAmount)
+        {
+            EGP:egpBox(NObjs, vec2(cos((360 / SlotTypeAmount) * I) * 220, sin((360 / SlotTypeAmount) * I) * 220), vec2(48))
+            EGP:egpMaterial(NObjs, SlotTypes[I, table]["Icon", string])
+            EGP:egpParent(NObjs, 1)
+            NObjs++
+        }
+        
+        # White text ontop of black text which is slightly offset to create a 3d effect
+        EGP:egpText(NObjs, "Slot Machine", vec2(254))
+        EGP:egpSize(NObjs, 52)
+        EGP:egpColor(NObjs, vec(0))
+        EGP:egpFont(NObjs, "Marlett")
+        EGP:egpAlign(NObjs, 1, 1)
+        NObjs++
+        
+        EGP:egpText(NObjs, "Slot Machine", vec2(256))
+        EGP:egpSize(NObjs, 52)
+        EGP:egpFont(NObjs, "Marlett")
+        EGP:egpAlign(NObjs, 1, 1)
+        
+        # Start animation
+        timer("startScreenAnimation", 200)
+        
+        # Store the current page so the chip knows what to do when the screen is pressed
+        Page = 1
+    }
+    
+    # Generate a random icon based on the chance of each slot
+    function string weightedRandom()
+    {
+        # Get the total chance
+        local Total = 0
+        foreach(K:number, V:table = SlotTypes)
+        {
+            Total += V["Chance", number]
+        }
+        
+        # Used to find out which slot exceeds the random number
+        local RunningTotal = 0
+        
+        # Generate a random number between 0 and the total chance
+        local Value = random(0, Total)
+        
+        foreach(K:number, V:table = SlotTypes)
+        {
+            # Increment RunningTotal by the chance until it exceeds the randomly generated number
+            RunningTotal += V["Chance", number]
+            
+            # If it exceeds it then return the Icon from the slot that exceeded it
+            if(Value <= RunningTotal)
+            {
+                return V["Icon", string]
+            }
+        }
+        
+        # If the random value generated is less than the first chance value then return the first icon
+        return SlotTypes[1, table]["Icon", string]
+    }
+    
+    # UI for the slot machine
+    function void slotMachineScreen()
+    {
+        # Clear the screen
+        EGP:egpClear()
+        
+        # Draw background
+        EGP:egpBox(1, vec2(256), vec2(1024))
+        EGP:egpColor(1, vec(0, 200, 64))
+        
+        # Variable used for keeping track of indexes when dynamically drawing
+        NObjs = 2
+        
+        # Draw 3 boxes to store the slots in
+        for(I = 1, 3)
+        {
+            EGP:egpBox(NObjs, vec2(128 * I, 150), vec2(96, 256))
+            EGP:egpAlpha(NObjs, 96)
+            NObjs++
+        }
+        
+        # Randomly generated a 3x3 of slots inside of the placeholders based on their chance
+        for(X = 1, 3)
+        {
+            Slots[X, table] = table()
+            for(Y = 1, 3)
+            {
+                Slots[X, table][Y, table] = table("Icon" = weightedRandom(), "ID" = NObjs)
+                EGP:egpBox(NObjs, vec2(128 * X, 62 + 85 * (Y - 1)), vec2(64))
+                EGP:egpMaterial(NObjs, Slots[X, table][Y, table]["Icon", string])
+                NObjs++
+            }
+        }
+        
+        # Draw a box with a black outline using two boxes
+        EGP:egpBox(NObjs, vec2(256, 350), vec2(384, 64))
+        EGP:egpColor(NObjs, vec(0))
+        
+        NObjs++
+        EGP:egpBox(NObjs, vec2(256, 350), vec2(380, 60))
+        
+        # Text for the box drawn above
+        NObjs++
+        EGP:egpText(NObjs, "Spin - $" + MaxPrize * 0.05, vec2(256, 350))
+        EGP:egpColor(NObjs, vec(0))
+        EGP:egpAlign(NObjs, 1, 1)
+        EGP:egpSize(NObjs, 42)
+        NObjs++
+        Page = 2
+        
+        foreach(K:number, V:table = SlotTypes)
+        {
+            EGP:egpBox(NObjs, vec2(-64 + 128 * ceil(K / 4), 400 + (K % 4) * 42), vec2(16))
+            EGP:egpMaterial(NObjs, V["Icon", string])
+            NObjs++
+            
+            EGP:egpText(NObjs, "$" + floor(MaxPrize / V["Chance", number]), vec2(-46 + 128 * ceil(K / 4), 400 + (K % 4) * 42))
+            EGP:egpAlign(NObjs, 0, 1)
+            NObjs++
+        }
+    }
+    
+    startScreen()
+}
+
+elseif(clk("startScreenAnimation"))
+{
+    # Angle the background which the icons are all parented to
+    # This rotates them all from while only using the ops of rotating 1 object
+    StartScreenAmplitude += 2
+    EGP:egpAngle(1, StartScreenAmplitude)
+    timer("startScreenAnimation", 200)
+}
+
+# If someone pressed E on the screen
+elseif(User & ~User)
+{
+    # If it's on the loading screen
+    if(Page == 1)
+    {
+        # Draw the main screen
+        slotMachineScreen()
+        
+        # Stop the animation from the title screen
+        stoptimer("startScreenAnimation")
+    }
+    
+    # If we're on the slot machine screen then request money
+    elseif(Page == 2)
+    {
+        if(!Running)
+        {
+            moneyRequest(User, MaxPrize * 0.05, "SlotMachine")
+        }
+    }
+}
+
+elseif(moneyClk("SlotMachine"))
+{
+    if(Running)
+    {
+        moneyGive(moneyClkPlayer(), MaxPrize * 0.05)
+        concmd(format("ulx psay $%s \"[Slot Machine] you were refunded as you paid while another player is using the machine\"", moneyClkPlayer():steamID()))
+    }
+    
+    else
+    {
+        Running = 1
+        timer("RunSlotMachine", 250)
+        Time = 0.02
+        CurrentUser = moneyClkPlayer()
+    }
+}
+
+elseif(clk("RunSlotMachine"))
+{
+    # If the sound extension is enabled then make a beeping noise
+    #ifdef entity:soundPlay(number, number, string)
+        entity():soundPlay(1, soundDuration("buttons/blip1.wav"), "buttons/blip1.wav")
+    #else
+    #endif
+    
+    for(X = 1, 3)
+    {
+        for(Y = 3, 1, -1)
+        {
+            ID = Slots[X, table][Y, table]["ID", number]
+            
+            if(Y == 1)
+            {
+                Slots[X, table][Y, table]["Icon", string] = weightedRandom()
+            }
+            
+            else
+            {
+                Slots[X, table][Y, table]["Icon", string] = Slots[X, table][Y - 1, table]["Icon", string]
+            }
+            
+            
+            EGP:egpMaterial(ID, Slots[X, table][Y, table]["Icon", string])
+        }
+    }
+    
+    Time *= 1.2
+    
+    if(Time > 1000)
+    {
+        Message = ""
+        LeftSlot = Slots[1, table][2, table]["Icon", string]
+        
+        Won = 1
+        for(I = 2, 3)
+        {
+            if(Slots[I, table][2, table]["Icon", string] != LeftSlot)
+            {
+                Won = 0
+                break
+            }
+        }
+        
+        
+        if(Won)
+        {
+            Prize = 0
+            foreach(K:number, V:table = SlotTypes)
+            {
+                if(V["Icon", string] == LeftSlot)
+                {
+                    Prize = MaxPrize / V["Chance", number]
+                    moneyGive(CurrentUser, Prize)
+                    break
+                }
+            }
+            
+            concmd(format("ulx psay $%s \"You won $%d congrats\"", CurrentUser:steamID(), Prize))
+            Message = format("You won $%d congrats", CurrentUser:steamID(), Prize)
+
+        }
+        
+        else
+        {
+            Message = "Too bad, you lost"
+            concmd(format("ulx psay $%s \"Too bad, you lost!", CurrentUser:steamID()))
+        }
+        
+        NObj = EGP:egpNumObjects() + 1
+        
+        EGP:egpBox(NObj, vec2(256), vec2(420, 96))
+        EGP:egpColor(NObj, vec(48))
+        
+        NObj++
+        EGP:egpText(NObj, Message, vec2(256))
+        EGP:egpAlign(NObj, 1, 1)
+        EGP:egpSize(NObj, 42)
+        EGP:egpFont(NObj, "Marlett")
+        
+        timer("Reset", 2000)
+    }
+    
+    else
+    {
+        timer("RunSlotMachine", Time)
+    }
+}
+
+elseif(clk("Reset"))
+{
+    reset()
+}
